@@ -1,0 +1,14 @@
+Full experiment history so far:
+
+<history>
+{{history}}
+</history>
+
+Current system prompt:
+
+<current_prompt>
+{{current_prompt}}
+</current_prompt>
+
+Propose the next experiment now.
+

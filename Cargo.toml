@@ -4,3 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+llm_prompt = { git = "https://github.com/guylemon/instrumentum", package = "llm_prompt", branch = "master" }
+llm_generate = { git = "https://github.com/guylemon/instrumentum", package = "llm_generate", branch = "master" }
+llm_msg = { git = "https://github.com/guylemon/instrumentum", package = "llm_msg", branch = "master" }
+llm_embed = { git = "https://github.com/guylemon/instrumentum", package = "llm_embed", branch = "master" }
+
+env_logger = "0.11.9"
+log = "0.4.29"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+csv = "1.4.0"
