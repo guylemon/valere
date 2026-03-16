@@ -1,0 +1,15 @@
+[model]
+embedding = "ollama:embeddinggemma"
+experiment = "ollama:llama3.2:1b"
+hypothesis = "xai:grok-4-1-fast-reasoning"
+
+[experiment]
+max_runs = 10
+max_seconds = 40.0
+prompt_sys = "prompt_variation.txt"
+prompt_user = ""
+
+[paths]
+sys_hypothesis = "sys_hypothesis.txt"
+user_hypothesis = "user_hypothesis_template.txt"
+results_log = "results_log.tsv"
