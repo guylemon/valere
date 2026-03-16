@@ -98,7 +98,7 @@ impl State {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 struct Config {
     dry_run: bool,
     log_path_results: String,
@@ -207,28 +207,41 @@ fn main() -> Result<(), WorkflowError> {
     let mut state = State::new(config);
 
     for run in 0..max_experiment_runs {
-        state.runs = run + 1;
+        let current_run = run + 1;
+        let config = state.config.clone();
 
-        let result = state
-            .pipe(read_sys_prompt_file)?
-            .pipe(get_current_high_score)?
-            .pipe(read_current_prompt)?
-            .pipe(read_user_prompt)?
-            .pipe(substitute_user_prompt_vars)?
-            .pipe(generate_hypothesis)?
-            .pipe(parse_hypothesis)?
-            .pipe(write_config_files)?
-            .pipe(commit_configs)?
-            .pipe(run_experiment)?
-            .pipe(judge_results)?
-            .pipe(log_results)?
-            .pipe(rollback_or_pass);
+        let result = (|| -> Result<State, WorkflowError> {
+            let mut state = State::new(config.clone());
+            state.runs = current_run;
+
+            state = state.pipe(read_sys_prompt_file)?;
+            state = state.pipe(get_current_high_score)?;
+            state = state.pipe(read_current_prompt)?;
+            state = state.pipe(read_user_prompt)?;
+            state = state.pipe(substitute_user_prompt_vars)?;
+            state = state.pipe(generate_hypothesis)?;
+            state = state.pipe(parse_hypothesis)?;
+            state = state.pipe(write_config_files)?;
+            state = state.pipe(commit_configs)?;
+            state = state.pipe(run_experiment)?;
+            state = state.pipe(judge_results)?;
+            state = state.pipe(log_results)?;
+            state = state.pipe(rollback_or_pass)?;
+            Ok(state)
+        })();
 
         match result {
             Ok(new_state) => state = new_state,
             Err(e) => {
-                error!("WorkflowError: {e}");
-                process::exit(1);
+                error!("WorkflowError in run {current_run}: {e}");
+                let crash_state = State::new(config.clone());
+                let _ = log_crash(&crash_state, &format!("crash:{}", e));
+                if crash_state.current_experiment_hash.is_empty() {
+                    // No commit was made yet
+                } else {
+                    reset_git_state();
+                }
+                continue;
             }
         }
     }
@@ -350,7 +363,7 @@ fn run_experiment(mut state: State) -> Result<State, WorkflowError> {
     let mut total_queries = 0usize;
 
     // let path = "topics.json";
-    let path = "debug_topics.json";
+    let path = "topics.json";
     info!("Reading topics from {path}");
     let content = fs::read_to_string(path)?;
     debug!("Content from {path}:\n{content}");
@@ -478,10 +491,14 @@ fn get_current_high_score(mut state: State) -> Result<State, WorkflowError> {
         if fields[0] == "commit_hash" {
             continue;
         }
-        if let Ok(score) = fields[1].parse::<f64>()
-            && score > high_score
-        {
-            high_score = score;
+        info!("Parsing line: {:?}", fields);
+        if let Ok(score) = fields[1].parse::<f64>() {
+            info!("Parsed score: {} from commit {}", score, fields[0]);
+            if score > high_score {
+                high_score = score;
+            }
+        } else {
+            info!("Failed to parse score from field: {}", fields[1]);
         }
     }
 
@@ -493,6 +510,8 @@ fn get_current_high_score(mut state: State) -> Result<State, WorkflowError> {
 fn judge_results(mut state: State) -> Result<State, WorkflowError> {
     if state.experiment_high_score < state.experiment_current_result.score {
         state.experiment_action = WorkflowAction::Keep;
+    } else {
+        state.experiment_action = WorkflowAction::Discard;
     }
 
     Ok(state)
@@ -516,13 +535,28 @@ fn rollback_or_pass(state: State) -> Result<State, WorkflowError> {
         WorkflowAction::Keep => {
             info!("Keeping: tagging current run.");
             let tag_name = format!("best-{}", state.runs);
-            let _ = Command::new("git")
-                .arg("tag")
-                .arg(&tag_name)
-                .output();
+            let _ = Command::new("git").arg("tag").arg(&tag_name).output();
         }
     }
     Ok(state)
+}
+
+fn log_crash(state: &State, reason: &str) -> Result<(), WorkflowError> {
+    let line = format!("exp{}\t0.0\tCRASH: {}\tcrash\t0.0\n", state.runs, reason);
+    fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&state.config.log_path_results)?
+        .write_all(line.as_bytes())?;
+    Ok(())
+}
+
+fn reset_git_state() {
+    let _ = Command::new("git")
+        .arg("reset")
+        .arg("--hard")
+        .arg("HEAD~1")
+        .output();
 }
 
 /// Logs experiment results to the TSV results log.
@@ -539,7 +573,7 @@ fn rollback_or_pass(state: State) -> Result<State, WorkflowError> {
 /// # Example Logs
 /// ```
 /// a1b2c3d    0.750    Simplify prompt instructions    keep    38.750
-/// a1b2c3d    0.000    CRASH experiment-timeout     discard    0.0
+/// a1b2c3d    0.000    CRASH experiment-timeout     crash    0.0
 /// e5f6g7h    0.820    Remove verbose examples    discard    37.660
 /// ```
 fn log_results(state: State) -> Result<State, WorkflowError> {
