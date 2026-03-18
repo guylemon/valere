@@ -1,2 +1,10 @@
 /target
 valere.toml
+baseline.txt
+debug_topics.json
+prompt_variation.txt
+results_log.tsv
+sys_hypothesis.txt
+topics.json
+user_hypothesis_template.txt
+
