@@ -1151,7 +1151,7 @@ checksum = "6373607a59f0be73a39b6fe456b8192fcc3585f602af20751600e974dd455e77"
 [[package]]
 name = "llm_embed"
 version = "0.1.0"
-source = "git+https://github.com/guylemon/instrumentum?branch=master#ec94c8a8827f01bcde1cbdcc31a4d7f55e32e8d5"
+source = "git+https://github.com/guylemon/instrumentum?branch=master#7c116a861be5951fe002b62e3234b2b8ffa1e8c4"
 dependencies = [
  "reqwest 0.13.2",
  "serde",
@@ -1161,7 +1161,7 @@ dependencies = [
 [[package]]
 name = "llm_generate"
 version = "0.1.0"
-source = "git+https://github.com/guylemon/instrumentum?branch=master#ec94c8a8827f01bcde1cbdcc31a4d7f55e32e8d5"
+source = "git+https://github.com/guylemon/instrumentum?branch=master#7c116a861be5951fe002b62e3234b2b8ffa1e8c4"
 dependencies = [
  "llm_msg",
  "llm_provider",
@@ -1175,7 +1175,7 @@ dependencies = [
 [[package]]
 name = "llm_msg"
 version = "0.1.0"
-source = "git+https://github.com/guylemon/instrumentum?branch=master#ec94c8a8827f01bcde1cbdcc31a4d7f55e32e8d5"
+source = "git+https://github.com/guylemon/instrumentum?branch=master#7c116a861be5951fe002b62e3234b2b8ffa1e8c4"
 dependencies = [
  "serde",
  "serde_json",
@@ -1184,12 +1184,12 @@ dependencies = [
 [[package]]
 name = "llm_prompt"
 version = "0.1.0"
-source = "git+https://github.com/guylemon/instrumentum?branch=master#ec94c8a8827f01bcde1cbdcc31a4d7f55e32e8d5"
+source = "git+https://github.com/guylemon/instrumentum?branch=master#7c116a861be5951fe002b62e3234b2b8ffa1e8c4"
 
 [[package]]
 name = "llm_provider"
 version = "0.1.0"
-source = "git+https://github.com/guylemon/instrumentum?branch=master#ec94c8a8827f01bcde1cbdcc31a4d7f55e32e8d5"
+source = "git+https://github.com/guylemon/instrumentum?branch=master#7c116a861be5951fe002b62e3234b2b8ffa1e8c4"
 dependencies = [
  "llm_msg",
  "serde",
@@ -2883,7 +2883,7 @@ dependencies = [
 [[package]]
 name = "webfetch"
 version = "0.1.0"
-source = "git+https://github.com/guylemon/instrumentum?branch=master#ec94c8a8827f01bcde1cbdcc31a4d7f55e32e8d5"
+source = "git+https://github.com/guylemon/instrumentum?branch=master#7c116a861be5951fe002b62e3234b2b8ffa1e8c4"
 dependencies = [
  "dirs",
  "html-to-markdown-rs",
@@ -2907,7 +2907,7 @@ dependencies = [
 [[package]]
 name = "websearch"
 version = "0.1.0"
-source = "git+https://github.com/guylemon/instrumentum?branch=master#ec94c8a8827f01bcde1cbdcc31a4d7f55e32e8d5"
+source = "git+https://github.com/guylemon/instrumentum?branch=master#7c116a861be5951fe002b62e3234b2b8ffa1e8c4"
 dependencies = [
  "llm_provider",
  "reqwest 0.13.2",
