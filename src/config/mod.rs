@@ -3,7 +3,7 @@ mod file;
 
 use clap::Parser;
 pub use cli::CliArgs;
-pub use file::{FileConfig, ModelProvider};
+pub use file::{FileConfig, ModelSpec};
 
 use crate::error::WorkflowError;
 use log::info;
@@ -13,13 +13,13 @@ use log::info;
 pub struct Config {
     pub dry_run: bool,
     pub validate_only: bool,
-    pub embedding_provider: ModelProvider,
+    pub embedding_model: ModelSpec,
     pub experiment_max_runs: usize,
     pub experiment_max_seconds: f64,
-    pub experiment_provider: ModelProvider,
+    pub experiment_model: ModelSpec,
     pub experiment_prompt_sys_path: String,
     pub experiment_prompt_user_path: Option<String>,
-    pub hypothesis_provider: ModelProvider,
+    pub hypothesis_model: ModelSpec,
     pub hypothesis_prompt_sys_path: String,
     pub hypothesis_prompt_user_path: String,
     pub workflow_history_log_path: String,
@@ -34,9 +34,9 @@ impl Config {
         let config = Self {
             dry_run: cli.dry_run,
             validate_only: cli.validate,
-            embedding_provider: file_config.model.embedding,
-            experiment_provider: file_config.model.experiment,
-            hypothesis_provider: file_config.model.hypothesis,
+            embedding_model: file_config.model.embedding,
+            experiment_model: file_config.model.experiment,
+            hypothesis_model: file_config.model.hypothesis,
             experiment_max_runs: cli.max_runs.unwrap_or(file_config.experiment.max_runs),
             experiment_max_seconds: cli
                 .max_seconds
@@ -82,35 +82,27 @@ impl Config {
     }
 
     fn validate(&self) -> Result<(), WorkflowError> {
-        let embedding_model = match &self.embedding_provider {
-            ModelProvider::Ollama(name) => name,
-            ModelProvider::Xai(name) => name,
-        };
-        if embedding_model.is_empty() {
+        if self.embedding_model.model.is_empty() {
             return Err(WorkflowError::Config(
                 "embedding model name cannot be empty".to_string(),
             ));
         }
 
-        let experiment_model = match &self.experiment_provider {
-            ModelProvider::Ollama(name) => name,
-            ModelProvider::Xai(name) => name,
-        };
-        if experiment_model.is_empty() {
+        if self.experiment_model.model.is_empty() {
             return Err(WorkflowError::Config(
                 "experiment model name cannot be empty".to_string(),
             ));
         }
 
-        let hypothesis_model = match &self.hypothesis_provider {
-            ModelProvider::Ollama(name) => name,
-            ModelProvider::Xai(name) => name,
-        };
-        if hypothesis_model.is_empty() {
+        if self.hypothesis_model.model.is_empty() {
             return Err(WorkflowError::Config(
                 "hypothesis model name cannot be empty".to_string(),
             ));
         }
+
+        Self::validate_provider("embedding", &self.embedding_model.provider)?;
+        Self::validate_provider("experiment", &self.experiment_model.provider)?;
+        Self::validate_provider("hypothesis", &self.hypothesis_model.provider)?;
 
         if self.experiment_max_runs == 0 {
             return Err(WorkflowError::Config(
@@ -148,6 +140,16 @@ impl Config {
         }
         Ok(())
     }
+
+    fn validate_provider(model_type: &str, provider: &str) -> Result<(), WorkflowError> {
+        match provider.to_lowercase().as_str() {
+            "ollama" | "xai" => Ok(()),
+            _ => Err(WorkflowError::Config(format!(
+                "invalid provider '{}' for {} model (expected 'ollama' or 'xai')",
+                provider, model_type
+            ))),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -156,7 +158,7 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    fn create_valid_config(provider: ModelProvider, temp_dir: &TempDir) -> Config {
+    fn create_valid_config(spec: ModelSpec, temp_dir: &TempDir) -> Config {
         let prompt_sys = temp_dir.path().join("prompt_variation.txt");
         let sys_hypothesis = temp_dir.path().join("sys_hypothesis.txt");
         let user_hypothesis = temp_dir.path().join("user_hypothesis.txt");
@@ -168,9 +170,9 @@ mod tests {
         Config {
             dry_run: false,
             validate_only: false,
-            embedding_provider: provider.clone(),
-            experiment_provider: provider.clone(),
-            hypothesis_provider: provider,
+            embedding_model: spec.clone(),
+            experiment_model: spec.clone(),
+            hypothesis_model: spec,
             experiment_max_runs: 10,
             experiment_max_seconds: 40.0,
             experiment_prompt_sys_path: prompt_sys.to_string_lossy().to_string(),
@@ -184,8 +186,14 @@ mod tests {
     #[test]
     fn test_valid_ollama_provider() {
         let temp_dir = TempDir::new().unwrap();
-        let config =
-            create_valid_config(ModelProvider::Ollama("llama3.2:1b".to_string()), &temp_dir);
+        let config = create_valid_config(
+            ModelSpec {
+                provider: "ollama".to_string(),
+                model: "llama3.2:1b".to_string(),
+                base_url: None,
+            },
+            &temp_dir,
+        );
         assert!(config.validate().is_ok());
     }
 
@@ -193,7 +201,11 @@ mod tests {
     fn test_valid_xai_provider() {
         let temp_dir = TempDir::new().unwrap();
         let config = create_valid_config(
-            ModelProvider::Xai("grok-4-1-fast-reasoning".to_string()),
+            ModelSpec {
+                provider: "xai".to_string(),
+                model: "grok-4-1-fast-reasoning".to_string(),
+                base_url: None,
+            },
             &temp_dir,
         );
         assert!(config.validate().is_ok());
@@ -202,73 +214,133 @@ mod tests {
     #[test]
     fn test_empty_embedding_model_name() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_valid_config(ModelProvider::Ollama("test".to_string()), &temp_dir);
+        let config = create_valid_config(
+            ModelSpec {
+                provider: "ollama".to_string(),
+                model: "test".to_string(),
+                base_url: None,
+            },
+            &temp_dir,
+        );
         let config = Config {
-            embedding_provider: ModelProvider::Ollama("".to_string()),
-            experiment_provider: config.experiment_provider,
-            hypothesis_provider: config.hypothesis_provider,
+            embedding_model: ModelSpec {
+                provider: "ollama".to_string(),
+                model: "".to_string(),
+                base_url: None,
+            },
+            experiment_model: config.experiment_model,
+            hypothesis_model: config.hypothesis_model,
             ..config
         };
         let result = config.validate();
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("embedding model name cannot be empty")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("embedding model name cannot be empty"));
     }
 
     #[test]
     fn test_empty_experiment_model_name() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_valid_config(ModelProvider::Ollama("test".to_string()), &temp_dir);
+        let config = create_valid_config(
+            ModelSpec {
+                provider: "ollama".to_string(),
+                model: "test".to_string(),
+                base_url: None,
+            },
+            &temp_dir,
+        );
         let config = Config {
-            embedding_provider: config.embedding_provider,
-            experiment_provider: ModelProvider::Ollama("".to_string()),
-            hypothesis_provider: config.hypothesis_provider,
+            embedding_model: config.embedding_model,
+            experiment_model: ModelSpec {
+                provider: "ollama".to_string(),
+                model: "".to_string(),
+                base_url: None,
+            },
+            hypothesis_model: config.hypothesis_model,
             ..config
         };
         let result = config.validate();
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("experiment model name cannot be empty")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("experiment model name cannot be empty"));
     }
 
     #[test]
     fn test_empty_hypothesis_model_name() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_valid_config(ModelProvider::Ollama("test".to_string()), &temp_dir);
+        let config = create_valid_config(
+            ModelSpec {
+                provider: "ollama".to_string(),
+                model: "test".to_string(),
+                base_url: None,
+            },
+            &temp_dir,
+        );
         let config = Config {
-            embedding_provider: config.embedding_provider,
-            experiment_provider: config.experiment_provider,
-            hypothesis_provider: ModelProvider::Ollama("".to_string()),
+            embedding_model: config.embedding_model,
+            experiment_model: config.experiment_model,
+            hypothesis_model: ModelSpec {
+                provider: "ollama".to_string(),
+                model: "".to_string(),
+                base_url: None,
+            },
             ..config
         };
         let result = config.validate();
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("hypothesis model name cannot be empty")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("hypothesis model name cannot be empty"));
     }
 
     #[test]
     fn test_invalid_provider_value() {
-        let toml_str = r#"
+        let temp_dir = TempDir::new().unwrap();
+        let prompt_sys = temp_dir.path().join("prompt_variation.txt");
+        let sys_hypothesis = temp_dir.path().join("sys_hypothesis.txt");
+        let user_hypothesis = temp_dir.path().join("user_hypothesis.txt");
+
+        fs::write(&prompt_sys, "").unwrap();
+        fs::write(&sys_hypothesis, "").unwrap();
+        fs::write(&user_hypothesis, "").unwrap();
+
+        let toml_str = format!(
+            r#"
 [model]
-embedding = "invalid_provider:model"
-experiment = "ollama:llama3.2:1b"
-hypothesis = "xaii:grok-4"
-"#;
-        let result: Result<FileConfig, _> = toml::from_str(toml_str);
+embedding = {{ provider = "invalid_provider", model = "model" }}
+experiment = {{ provider = "ollama", model = "llama3.2:1b" }}
+hypothesis = {{ provider = "xaii", model = "grok-4" }}
+
+[experiment]
+max_runs = 10
+max_seconds = 40.0
+prompt_sys = "{}"
+"#,
+            prompt_sys.display()
+        );
+        let file_config: FileConfig = toml::from_str(&toml_str).unwrap();
+        let config = Config {
+            dry_run: false,
+            validate_only: false,
+            embedding_model: file_config.model.embedding,
+            experiment_model: file_config.model.experiment,
+            hypothesis_model: file_config.model.hypothesis,
+            experiment_max_runs: file_config.experiment.max_runs,
+            experiment_max_seconds: file_config.experiment.max_seconds,
+            experiment_prompt_sys_path: file_config.experiment.prompt_sys,
+            experiment_prompt_user_path: file_config.experiment.prompt_user,
+            hypothesis_prompt_sys_path: sys_hypothesis.to_string_lossy().to_string(),
+            hypothesis_prompt_user_path: user_hypothesis.to_string_lossy().to_string(),
+            workflow_history_log_path: "results_log.tsv".to_string(),
+        };
+        let result = config.validate();
         assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("invalid provider"));
     }
 
     #[test]
@@ -287,8 +359,8 @@ prompt_sys = "prompt_variation.txt"
     fn test_missing_embedding_provider() {
         let toml_str = r#"
 [model]
-experiment = "ollama:llama3.2:1b"
-hypothesis = "xai:grok-4"
+experiment = { provider = "ollama", model = "llama3.2:1b" }
+hypothesis = { provider = "xai", model = "grok-4" }
 "#;
         let result: Result<FileConfig, _> = toml::from_str(toml_str);
         assert!(result.is_err());
@@ -298,8 +370,8 @@ hypothesis = "xai:grok-4"
     fn test_missing_experiment_provider() {
         let toml_str = r#"
 [model]
-embedding = "ollama:llama3.2:1b"
-hypothesis = "xai:grok-4"
+embedding = { provider = "ollama", model = "llama3.2:1b" }
+hypothesis = { provider = "xai", model = "grok-4" }
 "#;
         let result: Result<FileConfig, _> = toml::from_str(toml_str);
         assert!(result.is_err());
@@ -309,8 +381,8 @@ hypothesis = "xai:grok-4"
     fn test_missing_hypothesis_provider() {
         let toml_str = r#"
 [model]
-embedding = "ollama:llama3.2:1b"
-experiment = "xai:grok-4"
+embedding = { provider = "ollama", model = "llama3.2:1b" }
+experiment = { provider = "xai", model = "grok-4" }
 "#;
         let result: Result<FileConfig, _> = toml::from_str(toml_str);
         assert!(result.is_err());

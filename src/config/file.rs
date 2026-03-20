@@ -1,33 +1,20 @@
 use serde::Deserialize;
-use std::str::FromStr;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ModelProvider {
-    Ollama(String),
-    Xai(String),
+const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ModelSpec {
+    pub provider: String,
+    pub model: String,
+    #[serde(default)]
+    pub base_url: Option<String>,
 }
 
-impl<'de> Deserialize<'de> for ModelProvider {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        ModelProvider::from_str(&s).map_err(serde::de::Error::custom)
-    }
-}
-
-impl FromStr for ModelProvider {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (provider, model) = s.split_once(':').ok_or_else(|| {
-            format!("invalid model provider format: '{s}', expected 'provider:model'")
-        })?;
-        match provider.to_lowercase().as_str() {
-            "ollama" => Ok(ModelProvider::Ollama(model.to_string())),
-            "xai" => Ok(ModelProvider::Xai(model.to_string())),
-            _ => Err(format!("unknown provider: '{provider}'")),
-        }
+impl ModelSpec {
+    pub fn ollama_base_url(&self) -> String {
+        self.base_url
+            .clone()
+            .unwrap_or_else(|| DEFAULT_OLLAMA_BASE_URL.to_string())
     }
 }
 
@@ -44,9 +31,9 @@ pub struct FileConfig {
 
 #[derive(Deserialize, Debug)]
 pub struct ModelConfig {
-    pub embedding: ModelProvider,
-    pub experiment: ModelProvider,
-    pub hypothesis: ModelProvider,
+    pub embedding: ModelSpec,
+    pub experiment: ModelSpec,
+    pub hypothesis: ModelSpec,
 }
 
 #[derive(Deserialize, Debug)]

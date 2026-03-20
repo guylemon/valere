@@ -1,7 +1,7 @@
 [model]
-embedding = "ollama:embeddinggemma"
-experiment = "ollama:llama3.2:1b"
-hypothesis = "xai:grok-4-1-fast-reasoning"
+embedding = { provider = "ollama", model = "nomic-embed-text", base_url = "http://localhost:11434" }
+experiment = { provider = "ollama", model = "llama3.2:1b", base_url = "http://localhost:11434" }
+hypothesis = { provider = "xai", model = "grok-4-1-fast-reasoning" }
 
 [experiment]
 max_runs = 10

@@ -58,7 +58,8 @@ impl LogRecordBuilder {
         Self::default()
     }
 
-    pub fn score(mut self, score: f64) -> Self { self.score = Some(score);
+    pub fn score(mut self, score: f64) -> Self {
+        self.score = Some(score);
         self
     }
 

@@ -4,7 +4,7 @@ use crate::experiment::{Experiment, ExperimentResult};
 use crate::util::{LogRecordBuilder, append_log_row, get_high_score};
 use crate::workflow::proposer::Hypothesis;
 
-use log::{info};
+use log::info;
 
 #[derive(Debug, Default)]
 enum WorkflowAction {

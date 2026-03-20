@@ -1,9 +1,10 @@
 mod result;
 
-use crate::config::ModelProvider;
+use crate::config::ModelSpec;
 use crate::util::read_workflow_input_file;
 use crate::{config::Config, error::WorkflowError};
 use llm_msg::{Message, Role};
+use llm_provider::{ChatRequest, Provider as LlmProvider};
 use log::{debug, info, warn};
 use std::time::Instant;
 
@@ -14,14 +15,14 @@ pub struct Experiment {
     total_queries: usize,
     total_relevance: f64,
     valid_output_count: usize,
-    llm_provider: llm_generate::Provider,
+    llm_provider: llm_provider::Provider,
     embedding_provider: llm_embed::Provider,
 }
 
 impl Experiment {
     pub fn new(configuration: &Config) -> Self {
-        let llm_provider = llm_provider(&configuration.experiment_provider);
-        let embedding_provider = embedding_provider(&configuration.embedding_provider);
+        let llm_provider = llm_provider(&configuration.experiment_model);
+        let embedding_provider = embedding_provider(&configuration.embedding_model);
 
         Self {
             result: ExperimentResult::default(),
@@ -46,7 +47,12 @@ impl Experiment {
                 break;
             }
 
-            let response = run_test_prompt(topic, &prompt_variation, &self.llm_provider)?;
+            let response = run_test_prompt(
+                topic,
+                &prompt_variation,
+                &configuration.experiment_model.model,
+                &self.llm_provider,
+            )?;
 
             let generated_queries: Vec<String> = match serde_json::from_str(&response.content) {
                 Ok(vec) => vec,
@@ -158,28 +164,30 @@ fn read_experiment_input_files(
     Ok((topics, prompt_variation))
 }
 
-fn embedding_provider(mp: &ModelProvider) -> llm_embed::Provider {
-    match mp {
-        ModelProvider::Ollama(model) => llm_embed::Provider::Ollama {
-            model: model.to_string(),
-        },
-        _ => {
-            panic!("No support for embedding providers other than Ollama at this time.");
-        }
+fn embedding_provider(spec: &ModelSpec) -> llm_embed::Provider {
+    if spec.provider.to_lowercase() != "ollama" {
+        panic!("No support for embedding providers other than Ollama at this time.");
+    }
+    llm_embed::Provider::Ollama {
+        model: spec.model.clone(),
     }
 }
 
-fn llm_provider(mp: &ModelProvider) -> llm_generate::Provider {
-    match mp {
-        ModelProvider::Ollama(model) => llm_generate::Provider::Ollama {
-            model: model.to_string(),
-        },
-        ModelProvider::Xai(model) => {
+fn llm_provider(spec: &ModelSpec) -> LlmProvider {
+    match spec.provider.to_lowercase().as_str() {
+        "ollama" => {
+            let base_url = Some(format!("{}/api", spec.ollama_base_url()));
+            LlmProvider::Ollama(llm_provider::Config::new(base_url.as_deref()))
+        }
+        "xai" => {
             let api_key = std::env::var("XAI_API_KEY").unwrap_or("no-key-provided".to_string());
-            llm_generate::Provider::Xai {
+            LlmProvider::Xai {
                 api_key,
-                model: model.to_string(),
+                model: spec.model.clone(),
             }
+        }
+        _ => {
+            panic!("Unknown provider: {}", spec.provider);
         }
     }
 }
@@ -187,16 +195,25 @@ fn llm_provider(mp: &ModelProvider) -> llm_generate::Provider {
 fn run_test_prompt(
     topic: &str,
     prompt: &str,
-    provider: &llm_generate::Provider,
+    model_name: &str,
+    provider: &LlmProvider,
 ) -> Result<Message, WorkflowError> {
     info!("Generating response for prompt variation. topic: {topic}");
-    let tools_enabled = false;
     let messages: Vec<Message> = vec![
         Message::new(Role::System, prompt),
         Message::new(Role::User, topic),
     ];
 
-    match llm_generate::generate(messages, tools_enabled, provider) {
+    let chat_request = match ChatRequest::builder(model_name)
+        .messages(messages)
+        .options(llm_provider::Options::recommended())
+        .build()
+    {
+        Ok(req) => req,
+        Err(e) => return Err(WorkflowError::Config(e.to_string())),
+    };
+
+    match llm_generate::generate(&chat_request, provider) {
         Ok(response) => {
             debug!("Received response for topic: {topic}\n{response:?}");
             Ok(response)
