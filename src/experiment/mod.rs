@@ -207,6 +207,7 @@ fn run_test_prompt(
     let chat_request = match ChatRequest::builder(model_name)
         .messages(messages)
         .options(llm_provider::Options::recommended())
+        .stream(false)
         .build()
     {
         Ok(req) => req,
