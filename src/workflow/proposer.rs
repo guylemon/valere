@@ -1,8 +1,9 @@
+use crate::config::Config;
 use crate::error::WorkflowError;
 use crate::util::{read_history_log_first_two_columns, read_workflow_input_file, LogRecord};
-use crate::Config;
 use llm_generate::Message;
-use llm_generate::Provider;
+use llm_provider::ChatRequest;
+use llm_provider::Provider;
 use log::{debug, info, warn};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -33,21 +34,26 @@ impl Proposer {
         checkout_last_good_prompt(configuration)?;
         let system_prompt = read_workflow_input_file(&configuration.hypothesis_prompt_sys_path)?;
         let user_prompt = render_proposer_user_prompt(configuration)?;
-        let provider = provider(&configuration.hypothesis_provider)?;
+        let provider = provider(configuration)?;
+        let model_name = &configuration.hypothesis_model.model;
 
-        self.hypothesis =
-            generate_hypothesis(system_prompt, user_prompt, provider).and_then(parse_hypothesis)?;
+        self.hypothesis = generate_hypothesis(system_prompt, user_prompt, model_name, provider)
+            .and_then(parse_hypothesis)?;
 
         write_config_files(&configuration.experiment_prompt_sys_path, &self.hypothesis)
     }
 }
 
-fn provider(hypothesis_provider: &crate::config::ModelProvider) -> Result<Provider, WorkflowError> {
-    match hypothesis_provider {
-        crate::config::ModelProvider::Ollama(model) => Ok(Provider::Ollama {
-            model: model.to_string(),
-        }),
-        crate::config::ModelProvider::Xai(model) => {
+fn provider(configuration: &Config) -> Result<Provider, WorkflowError> {
+    let spec = &configuration.hypothesis_model;
+    match spec.provider.to_lowercase().as_str() {
+        "ollama" => {
+            let base_url = Some(format!("{}/api", spec.ollama_base_url()));
+            Ok(Provider::Ollama(llm_provider::Config::new(
+                base_url.as_deref(),
+            )))
+        }
+        "xai" => {
             let api_key = match std::env::var("XAI_API_KEY") {
                 Ok(k) => k,
                 Err(_) => {
@@ -58,9 +64,13 @@ fn provider(hypothesis_provider: &crate::config::ModelProvider) -> Result<Provid
             };
             Ok(Provider::Xai {
                 api_key,
-                model: model.to_string(),
+                model: spec.model.clone(),
             })
         }
+        _ => Err(WorkflowError::Config(format!(
+            "Unknown provider: {}",
+            spec.provider
+        ))),
     }
 }
 
@@ -83,6 +93,7 @@ fn render_proposer_user_prompt(configuration: &Config) -> Result<String, Workflo
 fn generate_hypothesis(
     system_prompt: String,
     user_prompt: String,
+    model_name: &str,
     provider: Provider,
 ) -> Result<String, WorkflowError> {
     info!("Generating hypothesis.");
@@ -90,9 +101,17 @@ fn generate_hypothesis(
     let system_prompt = Message::new(llm_msg::Role::System, &system_prompt);
     let user_prompt = Message::new(llm_msg::Role::User, &user_prompt);
     let messages = vec![system_prompt, user_prompt];
-    let tools_enabled = false;
 
-    match llm_generate::generate(messages, tools_enabled, &provider) {
+    let chat_request = match ChatRequest::builder(model_name)
+        .options(llm_provider::Options::recommended())
+        .messages(messages)
+        .build()
+    {
+        Ok(req) => req,
+        Err(e) => return Err(WorkflowError::Config(e.to_string())),
+    };
+
+    match llm_generate::generate(&chat_request, &provider) {
         Ok(response) => {
             let hypothesis = response.content;
             debug!("Generation succeeded. Raw hypothesis:\n{hypothesis}");
